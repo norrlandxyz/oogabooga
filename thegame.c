@@ -24,12 +24,12 @@ Sprite* get_sprite(SpriteID id) {
 	}
 	return &sprites[0];
 }
+// randy: maybe we make this an X marco????, (but a bitch to debug)
 
 typedef struct Entity {
 	bool is_valid;
 	EntityArchetype arch;
 	Vector2 pos;
-
 	bool render_sprite;
 	SpriteID sprite;
 } Entity;
