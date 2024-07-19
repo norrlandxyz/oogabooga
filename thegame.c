@@ -1,4 +1,5 @@
 const int tile_width = 8;
+const int entity_selection_radius = 16;
 
 int world_to_tile_pos(float world_pos) {
 	return	roundf(world_pos / (float)tile_width);
@@ -73,6 +74,11 @@ typedef struct World {
 	Entity entities[MAX_ENTITY_COUNT];
 } World;
 World* world = 0;
+
+typedef struct WorldFrame {
+	Entity* selected_entity;
+} WorldFrame;
+WorldFrame world_frame;
 
 Entity* entity_create() {
 	Entity* entity_found = 0;
@@ -157,14 +163,14 @@ int entry(int argc, char **argv) {
 	Entity *counter_en = entity_create();
 	setup_counter(counter_en);
 	counter_en->pos = round_v2_to_tile(counter_en->pos);
-	counter_en->pos.y -= tile_width * 0.5;
+	//counter_en->pos.y -= tile_width * 0.5;
 
 	for (int i = 0; i < 10; i++) {
 		Entity* en = entity_create();
 		setup_child(en);
 		en->pos = v2(get_random_float32_in_range(-120.0, 120.0), get_random_float32_in_range(-67.0, 67.0));
 		en->pos = round_v2_to_tile(en->pos);
-		en->pos.y -= tile_width * 0.5;
+		//en->pos.y -= tile_width * 0.5;
 	}
 
 
@@ -176,11 +182,11 @@ int entry(int argc, char **argv) {
 
 	float64 last_time = os_get_current_time_in_seconds();
 	while (!window.should_close) {
+		reset_temporary_storage();
+		world_frame = (WorldFrame){0};
 		float64 now = os_get_current_time_in_seconds();
 		float64 delta_t = now - last_time;
 		last_time = now;
-
-		reset_temporary_storage();
 
 		draw_frame.projection = m4_make_orthographic_projection(window.width * -0.5, window.width * 0.5, window.height * -0.5, window.height * 0.5, 
 			-1, 10);
@@ -195,26 +201,30 @@ int entry(int argc, char **argv) {
 			draw_frame.view = m4_mul(draw_frame.view, m4_make_scale(v3(1.0/zoom, 1.0/zoom, 1.0)));
 		}
 
-		Vector2 mouse_pos = screen_to_world();
-		int mouse_tile_x = world_to_tile_pos(mouse_pos.x);
-		int mouse_tile_y = world_to_tile_pos(mouse_pos.y);
+		Vector2 mouse_pos_world = screen_to_world();
+		int mouse_tile_x = world_to_tile_pos(mouse_pos_world.x);
+		int mouse_tile_y = world_to_tile_pos(mouse_pos_world.y);
 		{
 			
-			//draw_text(font, sprint(temp, STR("%f %f"), pos.x, pos.y), font_height, pos, v2(0.1,0.1), COLOR_RED);
+			float smallest_dist = INFINITY;		
+
 			for (int i = 0; i < MAX_ENTITY_COUNT; i++) {
 				Entity* en = &world->entities[i];
 				if(en->is_valid) {
-					Sprite* sprite = get_sprite(en->sprite);
-					Range2f bounds = range2f_make_bottom_center(sprite->size);
-					bounds = range2f_shift(bounds, en->pos);
 
-					Vector4 col = COLOR_RED;
-					col.a = 0.4;
-					if (range2f_contains(bounds, mouse_pos)) {
-						col.a = 1.0;
+					int entity_tile_x = world_to_tile_pos(en->pos.x);
+					int entity_tile_y = world_to_tile_pos(en->pos.y);
+
+
+					float dist = fabsf(v2_dist(en->pos, mouse_pos_world));
+					if (dist < entity_selection_radius) {
+						
+						if (!world_frame.selected_entity || (dist < smallest_dist)) {
+							world_frame.selected_entity = en;
+							smallest_dist = dist;
+						}
+
 					}
-
-					draw_rect(bounds.min, range2f_size(bounds), col);
 				}
 			}
 		}
@@ -238,8 +248,6 @@ int entry(int argc, char **argv) {
 			}
 		}
 
-		draw_rect(v2(tile_pos_to_world_pos(mouse_tile_x) + tile_width * -0.5, tile_pos_to_world_pos(mouse_tile_y) + tile_width * -0.5), v2(tile_width, tile_width), v4(0.5, 0.5, 0.5, 0.5));
-
 		for (int i = 0; i < MAX_ENTITY_COUNT; i++) {
 			Entity* en = &world->entities[i];
 			if (en->is_valid) {
@@ -250,11 +258,17 @@ int entry(int argc, char **argv) {
 						Sprite* sprite = get_sprite(en->sprite);
 
 						Matrix4 xform = m4_scalar(1.0);
+						xform = m4_translate(xform, v3(0, tile_width * -0.5, 0));
 						xform = m4_translate(xform, v3(en->pos.x, en->pos.y, 0));
 						xform = m4_translate(xform, v3(sprite->size.x * -0.5, 0.0, 0));
-						draw_image_xform(sprite->image, xform, sprite->size, COLOR_WHITE);
 
-						draw_text(font, sprint(temp, STR("%f %f"), en->pos.x, en->pos.y), font_height, en->pos, v2(0.1,0.1), COLOR_WHITE);
+						Vector4 col = COLOR_WHITE;
+						if (world_frame.selected_entity == en) {
+							col = COLOR_RED;
+						}
+
+						draw_image_xform(sprite->image, xform, sprite->size, col);
+
 						break;
 					}
 				}
@@ -280,7 +294,6 @@ int entry(int argc, char **argv) {
 		}
 		input_axis = v2_normalize(input_axis);
 
-		//player_pos = player_pos + (input_axis * 10.0);
 		player_en->pos = v2_add(player_en->pos, v2_mulf(input_axis, 100.0 * delta_t));
 
 

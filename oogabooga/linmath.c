@@ -72,6 +72,12 @@ inline Vector2 v2_div(LMATH_ALIGN Vector2 a, LMATH_ALIGN Vector2 b) {
 inline Vector2 v2_divf(LMATH_ALIGN Vector2 a, float32 s) {
 	return v2_div(a, v2(s, s));
 }
+inline float v2_length(Vector2 a) {
+    return sqrt(a.x * a.x + a.y * a.y);
+}
+inline float v2_dist(LMATH_ALIGN Vector2 a, LMATH_ALIGN Vector2 b) {
+	return v2_length(v2_sub(a, b));
+}
 
 inline Vector3 v3_add(LMATH_ALIGN Vector3 a, LMATH_ALIGN Vector3 b) {
 	LMATH_ALIGN Vector4 a128 = v4(a.x, a.y, a.z, 0.0);
