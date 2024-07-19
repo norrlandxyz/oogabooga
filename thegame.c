@@ -1,18 +1,14 @@
-const int tile_width = 8;
-const int entity_selection_radius = 16;
-
-int world_to_tile_pos(float world_pos) {
-	return	roundf(world_pos / (float)tile_width);
+inline float v2_length(Vector2 a) {
+    return sqrt(a.x * a.x + a.y * a.y);
+}
+inline float v2_dist(LMATH_ALIGN Vector2 a, LMATH_ALIGN Vector2 b) {
+	return v2_length(v2_sub(a, b));
 }
 
-float tile_pos_to_world_pos(int tile_pos){
-	return (float)tile_pos * (float)tile_width;
-}
+//in case of engine update^^
 
-Vector2 round_v2_to_tile(Vector2 world_pos) {
-	world_pos.x = tile_pos_to_world_pos(world_to_tile_pos(world_pos.x));
-	world_pos.y = tile_pos_to_world_pos(world_to_tile_pos(world_pos.x));
-	return world_pos;
+float sin_breathe (float time, float rate) {
+	return sin(time * rate+ 1.0) / 2.0;
 }
 
 bool almost_equals(float a, float b, float epsilon) {
@@ -33,23 +29,56 @@ void animate_v2_to_target(Vector2* value, Vector2 target, float delta_t, float r
 	animate_f32_to_target(&(value->y), target.y, delta_t, rate);
 }
 
+//generic utils ^^
+
+const int tile_width = 8;
+const int entity_selection_radius = 16;
+
+int world_pos_to_tile_pos(float world_pos) {
+	return	roundf(world_pos / (float)tile_width);
+}
+
+float tile_pos_to_world_pos(int tile_pos){
+	return (float)tile_pos * (float)tile_width;
+}
+
+Vector2 round_v2_to_tile(Vector2 world_pos) {
+	world_pos.x = tile_pos_to_world_pos(world_pos_to_tile_pos(world_pos.x));
+	world_pos.y = tile_pos_to_world_pos(world_pos_to_tile_pos(world_pos.y));
+	return world_pos;
+}
+
+
+
 typedef enum EntityArchetype {
 	arch_nil = 0,
 	arch_counter = 1,
 	arch_holder = 2,
 	arch_child = 3,
 	arch_player = 4,
+
+	arch_item_child = 5,	
+	arch_item_holder = 6,
+	arch_item_cactus = 7,
+	arch_item_blueberry = 8,
+	ITEM_MAX,
 } EntityArchetype;
 
 typedef struct Sprite {
 	Gfx_Image* image;
-	Vector2 size;
 } Sprite;
 typedef enum SpriteID {
 	SPRITE_nil,
 	SPRITE_player,
 	SPRITE_counter,
+	SPRITE_holder,
+	SPRITE_female,
+	SPRITE_male,
+	SPRITE_old_man,
 	SPRITE_child,
+	SPRITE_item_child,
+	SPRITE_item_cactus,
+	SPRITE_item_blueberry,
 	SPRITE_MAX,
 } SpriteID;
 Sprite sprites[SPRITE_MAX];
@@ -61,13 +90,21 @@ Sprite* get_sprite(SpriteID id) {
 }
 // randy: maybe we make this an X marco????, (but a bitch to debug)
 
+Vector2 get_sprite_size(Sprite* sprite) {
+	return (Vector2){sprite->image->width, sprite->image->height};
+}
+
 typedef struct Entity {
 	bool is_valid;
 	EntityArchetype arch;
 	Vector2 pos;
 	bool render_sprite;
 	SpriteID sprite;
+	int health;
+	bool destroyable_world_item;
+	bool is_item;
 } Entity;
+// :entity
 #define MAX_ENTITY_COUNT 1024
 
 typedef struct World {
@@ -97,19 +134,44 @@ Entity* entity_create() {
 void entity_destroy(Entity* entity) {
 	memset(entity, 0, sizeof(Entity));
 }
-
+void setup_holder(Entity* en) {
+	en->arch = arch_holder;
+	en->sprite = SPRITE_holder;
+	en->destroyable_world_item = true;
+}
+void setup_item_holder(Entity* en) {
+	en->arch = arch_item_holder;
+	en->sprite = SPRITE_holder;
+	en->destroyable_world_item = true;
+	en->is_item = true;
+}
 void setup_counter(Entity* en) {
 	en->arch = arch_counter;
 	en->sprite = SPRITE_counter;
+	en->destroyable_world_item = true;
+	en->health = 3;
 }
 void setup_child(Entity* en) {
 	en->arch = arch_child;
 	en->sprite = SPRITE_child;
+	en->destroyable_world_item = true;
+	en->health = 3;
+}
+void setup_item_child(Entity* en) {
+	en->arch = arch_item_child;
+	en->sprite = SPRITE_item_child;
+	en->is_item = true;
 }
 void setup_player(Entity* en) {
 	en->arch = arch_player;
 	en->sprite = SPRITE_player;
 }
+void setup_item_cactus(Entity* en) {
+	en->arch = arch_item_cactus;
+	en->sprite = SPRITE_item_cactus;
+	en->is_item = true;
+}
+
 
 Vector2 screen_to_world() {
 
@@ -149,9 +211,13 @@ int entry(int argc, char **argv) {
 	world = alloc(get_heap_allocator(), sizeof(World));
 	memset(world, 0, sizeof(World));
 
-	sprites[SPRITE_player] = (Sprite){ .image=load_image_from_disk(fixed_string("player.png"), get_heap_allocator()), .size=v2(6.0, 6.0) };
-	sprites[SPRITE_counter] = (Sprite){ .image=load_image_from_disk(fixed_string("counter.png"), get_heap_allocator()), .size=v2(17, 10) };
-	sprites[SPRITE_child] = (Sprite){ .image=load_image_from_disk(fixed_string("child.png"), get_heap_allocator()), .size=v2(3, 4) };
+	sprites[SPRITE_player] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/player.png"), get_heap_allocator())};
+	sprites[SPRITE_counter] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/counter.png"), get_heap_allocator())};
+	sprites[SPRITE_holder] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/holder.png"), get_heap_allocator())};
+	sprites[SPRITE_child] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/child.png"), get_heap_allocator())};
+	sprites[SPRITE_item_cactus] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/item_cactus.png"), get_heap_allocator())};
+
+
 
 	Gfx_Font *font = load_font_from_disk(STR("C:/windows/fonts/arial.ttf"), get_heap_allocator());
 	assert(font, "Failed loading arial.ttf");
@@ -163,12 +229,17 @@ int entry(int argc, char **argv) {
 	Entity *counter_en = entity_create();
 	setup_counter(counter_en);
 	counter_en->pos = round_v2_to_tile(counter_en->pos);
+
+	Entity *holder_en = entity_create();
+	setup_holder(holder_en);
+	holder_en->pos = v2(30.0, 20.0);
+	holder_en->pos = round_v2_to_tile(holder_en->pos);
 	//counter_en->pos.y -= tile_width * 0.5;
 
 	for (int i = 0; i < 10; i++) {
 		Entity* en = entity_create();
 		setup_child(en);
-		en->pos = v2(get_random_float32_in_range(-120.0, 120.0), get_random_float32_in_range(-67.0, 67.0));
+		en->pos = v2(get_random_float32_in_range(-120.0f, 120.0f), get_random_float32_in_range(-65.0f, 65.0f));
 		en->pos = round_v2_to_tile(en->pos);
 		//en->pos.y -= tile_width * 0.5;
 	}
@@ -202,18 +273,18 @@ int entry(int argc, char **argv) {
 		}
 
 		Vector2 mouse_pos_world = screen_to_world();
-		int mouse_tile_x = world_to_tile_pos(mouse_pos_world.x);
-		int mouse_tile_y = world_to_tile_pos(mouse_pos_world.y);
+		int mouse_tile_x = world_pos_to_tile_pos(mouse_pos_world.x);
+		int mouse_tile_y = world_pos_to_tile_pos(mouse_pos_world.y);
 		{
 			
 			float smallest_dist = INFINITY;		
 
 			for (int i = 0; i < MAX_ENTITY_COUNT; i++) {
 				Entity* en = &world->entities[i];
-				if(en->is_valid) {
+				if(en->is_valid && en->destroyable_world_item) {
 
-					int entity_tile_x = world_to_tile_pos(en->pos.x);
-					int entity_tile_y = world_to_tile_pos(en->pos.y);
+					int entity_tile_x = world_pos_to_tile_pos(en->pos.x);
+					int entity_tile_y = world_pos_to_tile_pos(en->pos.y);
 
 
 					float dist = fabsf(v2_dist(en->pos, mouse_pos_world));
@@ -231,8 +302,8 @@ int entry(int argc, char **argv) {
 
 		// :tile rendering
 		{
-			int player_tile_x = world_to_tile_pos(player_en->pos.x);
-			int player_tile_y = world_to_tile_pos(player_en->pos.y);
+			int player_tile_x = world_pos_to_tile_pos(player_en->pos.x);
+			int player_tile_y = world_pos_to_tile_pos(player_en->pos.y);
 			const int tile_radius_x = 40;
 			const int tile_radius_y = 30;
 		
@@ -248,6 +319,39 @@ int entry(int argc, char **argv) {
 			}
 		}
 
+
+		// clicky
+		{
+			Entity* selected_en = world_frame.selected_entity;
+
+			if (is_key_just_pressed(MOUSE_BUTTON_LEFT)) {
+				consume_key_just_pressed(MOUSE_BUTTON_LEFT);
+
+				if (selected_en) {
+					selected_en->health -= 1;
+					if(selected_en->health <= 0) {
+						
+						switch(selected_en->arch) {
+							case arch_child: {
+								Entity* en = entity_create();
+								setup_item_cactus(en);
+								en->pos = selected_en->pos;
+							} break;
+
+							case arch_holder: {
+
+							} break;
+
+							default: {} break;
+
+						}
+
+						entity_destroy(selected_en);
+					}
+				}
+			}
+		}
+
 		for (int i = 0; i < MAX_ENTITY_COUNT; i++) {
 			Entity* en = &world->entities[i];
 			if (en->is_valid) {
@@ -258,16 +362,19 @@ int entry(int argc, char **argv) {
 						Sprite* sprite = get_sprite(en->sprite);
 
 						Matrix4 xform = m4_scalar(1.0);
+						if(en->is_item) {
+							xform = m4_translate(xform, v3(0, 2.0 * sin_breathe(os_get_current_time_in_seconds(), 5), 0));
+						}
 						xform = m4_translate(xform, v3(0, tile_width * -0.5, 0));
 						xform = m4_translate(xform, v3(en->pos.x, en->pos.y, 0));
-						xform = m4_translate(xform, v3(sprite->size.x * -0.5, 0.0, 0));
+						xform = m4_translate(xform, v3(sprite->image->width * -0.5, 0.0, 0));
 
 						Vector4 col = COLOR_WHITE;
 						if (world_frame.selected_entity == en) {
 							col = COLOR_RED;
 						}
 
-						draw_image_xform(sprite->image, xform, sprite->size, col);
+						draw_image_xform(sprite->image, xform, get_sprite_size(sprite), col);
 
 						break;
 					}
