@@ -33,6 +33,7 @@ void animate_v2_to_target(Vector2* value, Vector2 target, float delta_t, float r
 
 const int tile_width = 8;
 const int entity_selection_radius = 16;
+const float player_pickup_radius = 20.0;
 
 int world_pos_to_tile_pos(float world_pos) {
 	return	roundf(world_pos / (float)tile_width);
@@ -61,7 +62,7 @@ typedef enum EntityArchetype {
 	arch_item_holder = 6,
 	arch_item_cactus = 7,
 	arch_item_blueberry = 8,
-	ITEM_MAX,
+	ARCH_MAX,
 } EntityArchetype;
 
 typedef struct Sprite {
@@ -107,8 +108,14 @@ typedef struct Entity {
 // :entity
 #define MAX_ENTITY_COUNT 1024
 
+typedef struct ItemData {
+	int amount;
+} ItemData;
+
 typedef struct World {
 	Entity entities[MAX_ENTITY_COUNT];
+	ItemData inventory_items[ARCH_MAX];
+	
 } World;
 World* world = 0;
 
@@ -215,6 +222,7 @@ int entry(int argc, char **argv) {
 	sprites[SPRITE_counter] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/counter.png"), get_heap_allocator())};
 	sprites[SPRITE_holder] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/holder.png"), get_heap_allocator())};
 	sprites[SPRITE_child] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/child.png"), get_heap_allocator())};
+	sprites[SPRITE_item_child] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/item_child.png"), get_heap_allocator())};
 	sprites[SPRITE_item_cactus] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/item_cactus.png"), get_heap_allocator())};
 
 
@@ -222,6 +230,13 @@ int entry(int argc, char **argv) {
 	Gfx_Font *font = load_font_from_disk(STR("C:/windows/fonts/arial.ttf"), get_heap_allocator());
 	assert(font, "Failed loading arial.ttf");
 	const u32 font_height = 48;
+
+	// :init
+
+	// test item adding
+	{
+		world->inventory_items[arch_item_child].amount = 5;
+	}
 
 	Entity* player_en = entity_create();
 	setup_player(player_en);
@@ -319,6 +334,22 @@ int entry(int argc, char **argv) {
 			}
 		}
 
+		// :update entities
+		{
+			for (int i = 0; i < MAX_ENTITY_COUNT; i++) {
+				Entity* en = &world->entities[i];
+				if (en->is_valid) {
+					if(en->is_item) {
+						//TODO epic physics
+						if (fabsf(v2_dist(en->pos, player_en->pos)) < player_pickup_radius) {
+							world->inventory_items[en->arch].amount += 1;
+							entity_destroy(en);
+						}
+					}
+				}
+			}
+		}
+
 
 		// clicky
 		{
@@ -334,7 +365,7 @@ int entry(int argc, char **argv) {
 						switch(selected_en->arch) {
 							case arch_child: {
 								Entity* en = entity_create();
-								setup_item_cactus(en);
+								setup_item_child(en);
 								en->pos = selected_en->pos;
 							} break;
 
