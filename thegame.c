@@ -5,6 +5,7 @@ inline float v2_dist(LMATH_ALIGN Vector2 a, LMATH_ALIGN Vector2 b) {
 	return v2_length(v2_sub(a, b));
 }
 
+
 //in case of engine update^^
 
 float sin_breathe (float time, float rate) {
@@ -65,6 +66,8 @@ typedef enum EntityArchetype {
 	ARCH_MAX,
 } EntityArchetype;
 
+
+
 typedef struct Sprite {
 	Gfx_Image* image;
 } Sprite;
@@ -95,6 +98,15 @@ Vector2 get_sprite_size(Sprite* sprite) {
 	return (Vector2){sprite->image->width, sprite->image->height};
 }
 
+SpriteID get_sprite_id_from_archetype(EntityArchetype arch) {
+	switch(arch) {
+		case arch_item_child: return SPRITE_item_child; break;
+		case arch_item_cactus: return SPRITE_item_cactus; break;
+		case arch_item_holder: return SPRITE_holder; break;
+		default: return 0;
+	}
+}
+
 typedef struct Entity {
 	bool is_valid;
 	EntityArchetype arch;
@@ -109,6 +121,7 @@ typedef struct Entity {
 #define MAX_ENTITY_COUNT 1024
 
 typedef struct ItemData {
+	EntityArchetype type;
 	int amount;
 } ItemData;
 
@@ -149,7 +162,6 @@ void setup_holder(Entity* en) {
 void setup_item_holder(Entity* en) {
 	en->arch = arch_item_holder;
 	en->sprite = SPRITE_holder;
-	en->destroyable_world_item = true;
 	en->is_item = true;
 }
 void setup_counter(Entity* en) {
@@ -218,6 +230,7 @@ int entry(int argc, char **argv) {
 	world = alloc(get_heap_allocator(), sizeof(World));
 	memset(world, 0, sizeof(World));
 
+	sprites[0] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/missing_tex.png"), get_heap_allocator())};
 	sprites[SPRITE_player] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/player.png"), get_heap_allocator())};
 	sprites[SPRITE_counter] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/counter.png"), get_heap_allocator())};
 	sprites[SPRITE_holder] = (Sprite){ .image=load_image_from_disk(fixed_string("res/sprites/holder.png"), get_heap_allocator())};
@@ -236,6 +249,7 @@ int entry(int argc, char **argv) {
 	// test item adding
 	{
 		world->inventory_items[arch_item_child].amount = 5;
+		world->inventory_items[arch_item_holder].amount = 5;
 	}
 
 	Entity* player_en = entity_create();
@@ -351,7 +365,7 @@ int entry(int argc, char **argv) {
 		}
 
 
-		// clicky
+		// :click destroy
 		{
 			Entity* selected_en = world_frame.selected_entity;
 
@@ -370,7 +384,9 @@ int entry(int argc, char **argv) {
 							} break;
 
 							case arch_holder: {
-
+								Entity* en = entity_create();
+								setup_item_holder(en);
+								en->pos = selected_en->pos;
 							} break;
 
 							default: {} break;
@@ -383,6 +399,7 @@ int entry(int argc, char **argv) {
 			}
 		}
 
+		//:render entites
 		for (int i = 0; i < MAX_ENTITY_COUNT; i++) {
 			Entity* en = &world->entities[i];
 			if (en->is_valid) {
@@ -413,6 +430,51 @@ int entry(int argc, char **argv) {
 			}
 		}
 				
+		//:render UI
+		{
+			float width = 240.0;
+			float height = 135.0;
+			draw_frame.view = m4_scalar(1.0);
+			draw_frame.projection = m4_make_orthographic_projection(0.0, width, 0.0, height, -1, 10);
+
+			float y_pos = 70.0;
+
+			int item_count = 0;
+			for (int i = 0; i < ARCH_MAX; i++) {
+				ItemData* item = &world->inventory_items[i];
+				if(item->amount > 0) { 
+					item_count += 1;
+				}
+			}
+
+			const float icon = 8.0;
+			const float padding = 2.0;
+			float icon_width = icon + padding;
+			float entire_thing = item_count * icon_width;
+			float x_start_pos = (width/2.0)-(entire_thing/2.0) + (icon_width * 0.5);
+			
+			int slot_index = 0;
+			for (int i = 0; i < ARCH_MAX; i++) {
+				ItemData* item = &world->inventory_items[i];
+				if(item->amount > 0) { 
+
+					float slot_index_offset = slot_index * icon_width;
+
+					Matrix4 xform = m4_scalar(1.0);
+					xform = m4_translate(xform, v3(x_start_pos + slot_index_offset, y_pos, 0.0));
+					xform = m4_translate(xform, v3(-4, -4, 0.0));
+					draw_rect_xform(xform, v2(8, 8), COLOR_BLACK);
+
+					Sprite* sprite = get_sprite(get_sprite_id_from_archetype(i));
+
+					draw_image_xform(sprite->image, xform, get_sprite_size(sprite), COLOR_WHITE);
+
+					slot_index += 1;
+				}
+			}
+
+		}
+
 		if(is_key_just_pressed(KEY_ESCAPE)) {
 			window.should_close = true;
 		}
