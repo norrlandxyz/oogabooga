@@ -70,6 +70,11 @@ const int tile_width = 8;
 const int entity_selection_radius = 16;
 const float player_pickup_radius = 20.0;
 
+const int ENTITIY_LAYER = 1;
+const int PLAYER_LAYER = 2;
+const int UI_LAYER = 3;
+
+
 int world_pos_to_tile_pos(float world_pos) {
 	return	roundf(world_pos / (float)tile_width);
 }
@@ -176,6 +181,7 @@ typedef enum UXstate {
 typedef struct World {
 	Entity entities[MAX_ENTITY_COUNT];
 	ItemData inventory_items[ARCH_MAX];
+	ItemData hand_item;
 	UXState ux_state;
 	float inventory_alpha;
 	float inventory_alpha_target;
@@ -288,7 +294,8 @@ int entry(int argc, char **argv) {
 	window.scaled_height = 720; 
 	window.x = 200;
 	window.y = 90;
-	window.clear_color = hex_to_rgba(0xe2b570ff);
+	window.clear_color = hex_to_rgba(0xe32495fff);
+						
 
 	seed_for_random = os_get_current_cycle_count();
 
@@ -309,12 +316,7 @@ int entry(int argc, char **argv) {
 	assert(font, "Failed loading arial.ttf");
 	const u32 font_height = 48;
 
-	// :init
-
-	// test item adding
-	{
-		world->inventory_items[arch_item_child].amount = 5;
-	}
+	//init
 
 	Entity* player_en = entity_create();
 	setup_player(player_en);
@@ -354,6 +356,7 @@ int entry(int argc, char **argv) {
 
 		draw_frame.projection = m4_make_orthographic_projection(window.width * -0.5, window.width * 0.5, window.height * -0.5, window.height * 0.5, 
 			-1, 10);
+		draw_frame.enable_z_sorting = true;
 
 		//	:camera
 		{
@@ -421,6 +424,7 @@ int entry(int argc, char **argv) {
 						//TODO epic physics
 						if (fabsf(v2_dist(en->pos, player_en->pos)) < player_pickup_radius) {
 							world->inventory_items[en->arch].amount += 1;
+							world->inventory_items[en->arch].type = en->arch;
 							entity_destroy(en);
 						}
 					}
@@ -486,7 +490,15 @@ int entry(int argc, char **argv) {
 							col = COLOR_RED;
 						}
 
-						draw_image_xform(sprite->image, xform, get_sprite_size(sprite), col);
+						if(en->arch == arch_player) {
+							push_z_layer(PLAYER_LAYER);
+							draw_image_xform(sprite->image, xform, get_sprite_size(sprite), col);
+							pop_z_layer();
+						} else {
+							push_z_layer(ENTITIY_LAYER);
+							draw_image_xform(sprite->image, xform, get_sprite_size(sprite), col);
+							pop_z_layer();
+						}
 
 						break;
 					}
@@ -496,6 +508,8 @@ int entry(int argc, char **argv) {
 				
 		//:render UI
 		{
+			
+			push_z_layer(UI_LAYER);
 			float width = 240.0;
 			float height = 135.0;
 			draw_frame.view = m4_scalar(1.0);
@@ -596,8 +610,6 @@ int entry(int argc, char **argv) {
 
 
 						float current_y_pos = icon_center.y;
-
-						
 						{
 							string title = get_archetype_pretty_name(i);
 
@@ -629,14 +641,56 @@ int entry(int argc, char **argv) {
 						}
 					}
 
-					slot_index += 1;
+						//click item (place in hand)
+					if(is_selected_alpha == 1.0 && is_key_just_pressed(MOUSE_BUTTON_RIGHT)) {
+						world->hand_item.amount = world->inventory_items[i].amount;
+						world->hand_item.type = world->inventory_items[i].type;
+						world->inventory_items[i].amount -= 0;
+					}
+
+						slot_index += 1;
 				}
 			}
+			pop_z_layer();
+		}
+		} // ignore this :)
+
+		//render hand
+		{
+			if(world->hand_item.amount > 0) {
+
+				Vector2 mouse = screen_to_world();
+
+
+				Sprite* sprite = get_sprite(get_sprite_id_from_archetype(world->hand_item.type));
+
+				Matrix4 xform = m4_scalar(1.0);
+				xform = m4_translate(xform, v3(0, tile_width * -0.5, 0));
+				xform = m4_translate(xform, v3(mouse.x, mouse.y, 0));
+				xform = m4_translate(xform, v3(sprite->image->width * -0.5, 0.0, 0));
+
+				Vector4 col = COLOR_WHITE;
+				col.a = 0.5;
+
+				push_z_layer(UI_LAYER);
+				draw_image_xform(sprite->image, xform, get_sprite_size(sprite), col);
+				pop_z_layer();
+
+				if(is_key_just_pressed(MOUSE_BUTTON_RIGHT)) {
+					Entity* en = entity_create();
+					switch(world->hand_item.type) {
+						case arch_item_child: 
+							setup_child(en);
+							break;
+						default:
+							break;
+					}
+					en->pos = v2(mouse.x, mouse.y);
+					//player_en->pos = en->pos;
+					//en->pos = round_v2_to_tile(en->pos);
+				}
 			}
-			
-
-			
-
+				
 		}
 
 		if(is_key_just_pressed(KEY_ESCAPE)) {
